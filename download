@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+file.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+backup*/
+*.zip
+.DS_Store
+Thumbs.db

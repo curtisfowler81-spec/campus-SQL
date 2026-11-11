@@ -7,8 +7,10 @@ import mysql.connector
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, redirect, url_for, flash, abort
 from flask_wtf.csrf import CSRFProtect
+from models import MODELS, CollegeRepository
 
-load_dotenv(Path(__file__).resolve().parent / '.env')
+BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ('.env' if (BASE_DIR / '.env').exists() else 'file.env'))
 app = Flask(__name__)
 app.config.update(SECRET_KEY=os.getenv('SECRET_KEY') or secrets.token_hex(32),
                   SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax',
@@ -49,23 +51,34 @@ def spec_for(table):
 
 @app.get('/')
 def home():
-    tables = []
-    error = None
+    selected = request.args.get('table', 'All')
+    if selected != 'All' and selected not in TABLES:
+        abort(404)
+    tables, error = [], None
     try:
         with database() as connection:
-            cursor = connection.cursor(dictionary=True)
-            try:
-                for name, spec in TABLES.items():
-                    columns = [spec['pk']] + [f[0] for f in spec['fields']]
-                    sql_columns = ', '.join('`'+c+'`' for c in columns)
-                    cursor.execute(f"SELECT {sql_columns} FROM `{name}` ORDER BY `{spec['pk']}` LIMIT 100")
-                    tables.append(dict(name=name, pk=spec['pk'], columns=columns, rows=cursor.fetchall()))
-            finally:
-                cursor.close()
+            repository = CollegeRepository(connection)
+            objects = {name: repository.all(name) for name in TABLES}
+            students = {s.student_id:s for s in objects['Students']}
+            courses = {c.course_id:c for c in objects['Courses']}
+            for name, spec in TABLES.items():
+                if selected not in ('All',name):
+                    continue
+                columns = [spec['pk']] + [f[0] for f in spec['fields']]
+                rows = [obj.to_record() for obj in objects[name]]
+                if name == 'Enrollments':
+                    columns += ['student_name','course_name','course_code']
+                    for row in rows:
+                        student = students.get(row['student_id'])
+                        course = courses.get(row['course_id'])
+                        row['student_name'] = student.full_name() if student else '(missing student)'
+                        row['course_name'] = course.display_name() if course else '(missing course)'
+                        row['course_code'] = course.course_code if course else None
+                tables.append(dict(name=name,pk=spec['pk'],columns=columns,rows=rows))
     except Exception:
-        app.logger.exception('Unable to load tables')
-        error = 'Unable to load all tables. Check the terminal for details.'
-    return render_template('index.html', tables=tables, error=error)
+        app.logger.exception('Unable to load records')
+        error = 'Unable to load records. Check the terminal for details.'
+    return render_template('index.html',tables=tables,error=error)
 
 @app.route('/edit/<table>/<int:record_id>', methods=['GET','POST'])
 def edit(table, record_id):
@@ -104,9 +117,9 @@ def edit(table, record_id):
                             if value.year < 1000:
                                 raise ValueError('Date year must be at least 1000.')
                         values.append(None if value == '' else value)
-                    assignments = ', '.join('`'+f[0]+'` = %s' for f in spec['fields'])
                     try:
-                        cursor.execute(f'UPDATE `{table}` SET {assignments} WHERE `{pk}` = %s', tuple(values)+(record_id,))
+                        record = MODELS[table](**dict(zip([field[0] for field in spec['fields']], values)), **{pk: record_id})
+                        CollegeRepository.update(cursor, table, record)
                         connection.commit()
                     except Exception:
                         connection.rollback()
@@ -186,9 +199,8 @@ def add_record(table):
                                     raise ValueError('Date year must be at least 1000.')
                             columns.append(name)
                             values.append(None if value == '' else value)
-                        column_sql = ', '.join('`' + name + '`' for name in columns)
-                        placeholders = ', '.join(['%s'] * len(values))
-                        cursor.execute(f'INSERT INTO `{table}` ({column_sql}) VALUES ({placeholders})', tuple(values))
+                        record = MODELS[table](**dict(zip(columns, values)))
+                        CollegeRepository.create(cursor, table, record)
                         new_id = cursor.lastrowid if table == 'Enrollments' else values[0]
                         connection.commit()
                         flash(f'{table} record {new_id} added.', 'success')
