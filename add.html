@@ -1,0 +1,12 @@
+{% extends 'base.html' %}{% block content %}<section class="form">
+<h2>Add {{ table }}</h2>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if table == 'Enrollments' %}<p>MySQL assigns the enrollment ID automatically.</p>{% else %}<p>Enter an unused ID. Student and course IDs are not automatically generated in your original schema.</p>{% endif %}
+<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{% for name,kind,limit,required in fields %}<label>{{ name }}{% if required %} (required){% endif %}
+{% if kind == 'student' %}<select name="{{ name }}" required><option value="">Choose a student</option>{% for item in students %}<option value="{{ item.student_id }}" {% if values.get(name) == item.student_id|string %}selected{% endif %}>{{ item.student_id }} — {{ item.first_name or '' }} {{ item.last_name or '' }}</option>{% endfor %}</select>
+{% elif kind == 'course' %}<select name="{{ name }}" required><option value="">Choose a course</option>{% for item in courses %}<option value="{{ item.course_id }}" {% if values.get(name) == item.course_id|string %}selected{% endif %}>{{ item.course_id }} — {{ item.course_name or '' }}</option>{% endfor %}</select>
+{% else %}<input type="{{ kind }}" name="{{ name }}" value="{{ values.get(name, '') }}" {% if required %}required{% endif %} {% if limit %}maxlength="{{ limit }}"{% endif %} {% if kind == 'number' %}step="1" min="{{ 0 if name == 'credits' else -2147483648 }}" max="2147483647"{% endif %} {% if kind == 'datetime-local' %}step="1"{% endif %}>{% endif %}</label>{% endfor %}
+<button type="submit" {% if table == 'Enrollments' and (not students or not courses) %}disabled{% endif %}>Add record to MySQL</button> <a href="{{ url_for('home') }}">Cancel</a>
+{% if table == 'Enrollments' and (not students or not courses) %}<p>Add at least one student and one course first.</p>{% endif %}
+</form></section>{% endblock %}
