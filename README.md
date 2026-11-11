@@ -19,7 +19,7 @@ This is a Python web application: no separate compilation step is needed.
 app.py                 Flask entry point, routes, form validation
 models.py              Student, Course, Enrollment, CollegeRepository
 requirements.txt       Python dependencies
-schema.sql             Creates the database and tables without DROP TABLE
+college.sql             Creates the database and tables without DROP TABLE
 .env.example           Configuration template without real credentials
 .gitignore             Excludes credentials and local environment files
 templates/
